@@ -2,6 +2,7 @@
 
 Transform, optimize, and deliver images in real time using AWS serverless technologies.
 
+![Solution Architecture](./solution_architecture_lucidchart.png)
 ![Solution Architecture](./solution_architecture.png) 
 ![Solution Architecture](./solution_architecture_detailed.png)
 
