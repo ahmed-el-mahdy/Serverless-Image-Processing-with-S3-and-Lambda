@@ -6,7 +6,6 @@ Transform, optimize, and deliver images in real time using AWS serverless techno
 
 ## Table of Contents
 
-
 - [Solution Overview](#solution-overview)
 - [Architecture](#architecture)
 - [Features](#features)
