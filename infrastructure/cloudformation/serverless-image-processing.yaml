@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Serverless Image Processing with S3 and Lambda'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'serverless-image-processing'
+    Description: 'Name of the project used for resource naming'
+  
+  ResizeWidth:
+    Type: Number
+    Default: 800
+    Description: 'Target width for resized images'
+  
+  ResizeHeight:
+    Type: Number
+    Default: 600
+    Description: 'Target height for resized images'
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.9
+
+Resources:
+  # Input S3 Bucket for original images
+  InputImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-input-images-${AWS::AccountId}'
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ImageProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .jpg
+                  - Name: suffix
+                    Value: .jpeg
+                  - Name: suffix
+                    Value: .png
+                  - Name: suffix
+                    Value: .gif
+                  - Name: suffix
+                    Value: .bmp
+                  - Name: suffix
+                    Value: .tiff
+                  - Name: suffix
+                    Value: .webp
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # Output S3 Bucket for processed images
+  OutputImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-output-images-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # Lambda Function for Image Processing
+  ImageProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-image-processor'
+      CodeUri: ../../lambda-functions/image-processor/
+      Handler: lambda_function.lambda_handler
+      Environment:
+        Variables:
+          OUTPUT_BUCKET: !Ref OutputImageBucket
+          RESIZE_WIDTH: !Ref ResizeWidth
+          RESIZE_HEIGHT: !Ref ResizeHeight
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref InputImageBucket
+        - S3WritePolicy:
+            BucketName: !Ref OutputImageBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref InputImageBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .jpg
+
+  # Lambda Permission for S3 to invoke the function
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ImageProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub '${InputImageBucket}/*'
+
+  # IAM Role for Lambda Function
+  ImageProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub '${InputImageBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub '${OutputImageBucket}/*'
+
+  # Optional: DynamoDB table for metadata storage
+  ImageMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-image-metadata'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: image_id
+          AttributeType: S
+        - AttributeName: upload_timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: image_id
+          KeyType: HASH
+        - AttributeName: upload_timestamp
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+Outputs:
+  InputBucketName:
+    Description: 'Name of the input S3 bucket'
+    Value: !Ref InputImageBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-InputBucket'
+
+  OutputBucketName:
+    Description: 'Name of the output S3 bucket'
+    Value: !Ref OutputImageBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-OutputBucket'
+
+  LambdaFunctionArn:
+    Description: 'ARN of the image processing Lambda function'
+    Value: !GetAtt ImageProcessorFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaArn'
+
+  DynamoDBTableName:
+    Description: 'Name of the DynamoDB table for metadata'
+    Value: !Ref ImageMetadataTable
+    Export:
+      Name: !Sub '${AWS::StackName}-DynamoDBTable'
+
