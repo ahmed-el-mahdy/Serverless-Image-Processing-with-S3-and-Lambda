@@ -37,6 +37,24 @@ This solution provides a serverless image processing pipeline using AWS services
 
 ## Architecture
 
+### Current Source Contract
+
+Source review: 30 October 2026. The Lambda implementation reads source images from S3, resizes with Pillow and writes output to the configured output bucket. It does not establish a metadata-writing path merely because the template also declares DynamoDB.
+
+```mermaid
+flowchart LR
+	Upload["Image upload"] --> Input["Input S3 bucket"]
+	Input --> Trigger["Configured object-created notification"]
+	Trigger --> Function["Python Lambda and Pillow resize"]
+	Function --> Output["Output S3 bucket"]
+	Function -.-> Logs["CloudWatch logs"]
+	Template["SAM template"] -.-> Metadata["Declared DynamoDB table - not wired by handler"]
+```
+
+The template's notification/filter composition, Lambda invoke source ARN, code path, runtime support and duplicate explicit/SAM event ownership need review before deployment. `CodeUri` must resolve to the actual handler directory; the checked-in Python runtime declaration is historical, not a current recommendation. Inspect output extension/content-type behavior because the processor writes JPEG data. These are known review gates, not changes silently applied by this documentation update.
+
+The committed CloudFormation/SAM template is under `infrastructure/cloudformation/`; do not assume a runnable Terraform root from the historical deployment section unless that directory and its files exist. A declared resource is not a tested deployment, and cost/concurrency claims below are illustrative rather than benchmarks.
+
 The solution implements an event-driven serverless architecture:
 
 1. **Input S3 Bucket**: Receives original images
@@ -129,7 +147,7 @@ The Lambda function supports the following environment variables:
 ### Processing Parameters
 
 - **Image Formats**: Supports JPG, PNG, GIF, BMP, TIFF, WebP
-- **Max File Size**: 50MB (Lambda limit)
+- **Max File Size**: establish a tested application limit from the selected Lambda/runtime configuration; 50 MB is not a universal image-processing payload limit
 - **Processing Timeout**: 30 seconds
 - **Memory Allocation**: 512MB (configurable)
 
@@ -226,4 +244,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](./LICE
 ---
 
 **Note**: This solution is designed for educational and demonstration purposes. For production use, please review and customize the security, monitoring, and operational aspects according to your specific requirements.
+
+Career evidence: [personal repository map](https://github.com/ahmed-el-mahdy/Career-Advance#personal-repository-reference-map). Describe this as an event-driven learning/reference project, not an employer production deployment or a measured operational-cost reduction.
 
